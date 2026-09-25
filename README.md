@@ -2,7 +2,7 @@
 
 # conations
 
-Private durable workspace for Vera conation history and lifecycle evidence.
+Durable workspace for Vera conation history and lifecycle evidence.
 
 This repository is **not authority over Current Vera**, not canonical memory, and not a standing-order or consent system. A stored conation records what the evidence supported at a particular time. It does not automatically remain current later.
 
