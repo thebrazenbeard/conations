@@ -53,10 +53,18 @@ python -m unittest discover -s tests -v
 ```
 
 The `export` command emits JSON to local stdout only; nothing is uploaded or
-registered. It includes event paths, recorded dates and raw-byte SHA-256
-content digests; it omits personal free-text subjects and recorded status
-text by default. `export --include-subject --include-status` selects those
-fields for explicit local disclosure. Either
-output is **history only** (`effect_authority: none`,
+registered. By default it includes dates, lifecycle types and raw-byte SHA-256
+digests but omits descriptive event paths, personal subjects and recorded
+status text. `export --include-path`, `--include-subject`, and
+`--include-status` independently opt in to the corresponding fields.
+Hashes and dates still permit correlation; this is *minimization*, not a
+guarantee of anonymization or authority to replicate data elsewhere.
+
+Default `export` validation errors are fixed-category and omit event paths and
+field values, even when `--include-path` is set. Rich errors require a **separate**
+local-only `--include-diagnostics` opt-in; `check` is an explicitly diagnostic
+local action and may also print sensitive details. Do not forward diagnostic
+output or private opt-in exports to other providers automatically. Either
+successful export is **history only** (`effect_authority: none`,
 `activation: fresh_reappraisal_required`), not a current conation, consent,
 task, or model-drive strength.

@@ -26,19 +26,21 @@ The top-level keys are:
 | `activation` | Always `fresh_reappraisal_required` |
 | `events[]` | Dated source metadata; **not** active drive signals |
 
-Each `events[]` entry has `path`, `event_date`, `event_type`,
-`content_sha256`, and `status_currentness: historical_only`.
+Each default `events[]` entry has `event_date`, `event_type`,
+`content_sha256`, and `status_currentness: historical_only`. The relative
+`path` is omitted by default because a descriptive basename may reveal private
+historical or relational context.
 The digest covers the exact stored file **bytes**, including line endings. A
 recorded label such as `PRESENT` describes the dated event; it is not current
-state. Free-text `subject` and `recorded_status` are omitted unless the caller
-invokes `export --include-subject --include-status` (each flag works
-independently). These are explicit disclosure choices, not licenses for remote
-replication or model training.
+state. `export --include-path`, `--include-subject`, and `--include-status`
+work independently. Even a date/digest pair may permit linkage to another
+copy of the same evidence. These are explicit local disclosure choices, not
+licenses for remote replication or model training.
 
 ## Boundary for Meso-CRCT, Volition, and other consumers
 
-Consumers may use an event path/digest as a locator for review or evidence
-retrieval. They must not infer present salience, pleasure, valence, desire,
+Consumers who explicitly opt into event paths may use a path/digest as a
+locator for review or evidence retrieval. They must not infer present salience, pleasure, valence, desire,
 DriveKind, a normalized magnitude/confidence, behavioral authority, consent,
 future task, or authorization from an old record. In particular, **no** direct
 mapping from `recorded_status: PRESENT` to an active Volition `Signal` or
@@ -56,3 +58,14 @@ guarantee that every relevant conversation was captured.
 is unindexed, the header is ambiguous/invalid, or a direct event file is a
 symlink. A failure does **not** imply a desire is absent or revoked; it means
 the checkout is unsuitable for this bounded machine projection until repaired.
+
+Default `export` failures disclose only fixed diagnostic categories, not
+descriptive paths, private header values, or traceback causes. The public
+`build_manifest()` API applies the same default error redaction, including
+when `include_path=True`; this option never silently enables field diagnostics.
+`export --include-diagnostics` and programmatic `include_diagnostics=True`
+explicitly reveal fuller local validation error details; local `check` is
+diagnostic by design. Such output is sensitive and must not be routed to a
+model, Bus, analytics service, or external logger without separate authority.
+Unexpected programming/runtime failures are not a promise of full metadata
+privacy, and the SHA-256/content dates still allow correlation.

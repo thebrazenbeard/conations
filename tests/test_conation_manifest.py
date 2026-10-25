@@ -3,7 +3,7 @@
 import json
 import hashlib
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +47,7 @@ class ConationManifestTests(unittest.TestCase):
         self.assertEqual("historical_only", event["status_currentness"])
         self.assertEqual(64, len(event["content_sha256"]))
         self.assertNotIn("subject", event)
+        self.assertNotIn("path", event)
         self.assertNotIn("magnitude", event)
         self.assertNotIn("confidence", event)
         self.assertNotIn("drive_kind", event)
@@ -58,6 +59,103 @@ class ConationManifestTests(unittest.TestCase):
         result = build_manifest(self.root, include_subject=True)
         self.assertEqual("Private exploratory direction", result["events"][0]["subject"])
         self.assertEqual("history_only", result["currentness"])
+
+    def test_path_is_independently_opted_in(self):
+        path_only = build_manifest(self.root, include_path=True)["events"][0]
+        self.assertEqual("events/2026-09-04/test-direction.md", path_only["path"])
+        self.assertNotIn("subject", path_only)
+        self.assertNotIn("recorded_status", path_only)
+        subject_only = build_manifest(self.root, include_subject=True)["events"][0]
+        self.assertNotIn("path", subject_only)
+
+    def test_invalid_private_field_does_not_leak_via_path_opt_in_errors(self):
+        private_value = "PERSONAL-FIELD-VALUE-NOT-AUTHORIZED"
+        private_path = "private-relationship-direction.md"
+        self.event.rename(self.folder / private_path)
+        self.index.write_text(
+            f"[event](./events/2026-09-04/{private_path})\n", encoding="utf-8"
+        )
+        path = self.folder / private_path
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("Event: ADD", f"Event: {private_value}"),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ManifestError, "event type") as captured:
+            build_manifest(self.root, include_path=True)
+        self.assertNotIn(private_path, str(captured.exception))
+        self.assertNotIn(private_value, str(captured.exception))
+        self.assertIsNone(captured.exception.__cause__)
+        self.assertIsNone(captured.exception.__context__)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code = main(["export", "--root", str(self.root), "--include-path"])
+        self.assertEqual(2, code)
+        self.assertNotIn(private_path, err.getvalue())
+        self.assertNotIn(private_value, err.getvalue())
+        self.assertIn("event type", err.getvalue())
+        with self.assertRaisesRegex(ManifestError, private_value):
+            build_manifest(self.root, include_path=True, include_diagnostics=True)
+        detail = io.StringIO()
+        with redirect_stderr(detail):
+            self.assertEqual(2, main([
+                "export", "--root", str(self.root), "--include-diagnostics"
+            ]))
+        self.assertIn(private_value, detail.getvalue())
+
+    def test_default_unindexed_path_error_is_redacted(self):
+        private_name = "confidential-partner-decision.md"
+        self.event.rename(self.folder / private_name)
+        self.index.write_text("# No event link\n", encoding="utf-8")
+        with self.assertRaisesRegex(ManifestError, "not indexed") as captured:
+            build_manifest(self.root)
+        self.assertNotIn(private_name, str(captured.exception))
+        self.assertIsNone(captured.exception.__context__)
+        self.assertIsNone(captured.exception.__cause__)
+
+    def test_root_symlink_loop_does_not_leak_private_path(self):
+        loop = self.root / "private-relationship-direction-loop"
+        loop.symlink_to(loop)
+        with self.assertRaises(ManifestError) as captured:
+            build_manifest(loop)
+        # Python 3.12 raises RuntimeError from resolve() for this loop, while
+        # 3.13 can resolve non-strictly and later reject the missing directory.
+        # Both must disclose exactly one fixed, private-data-free category.
+        self.assertIn(
+            str(captured.exception),
+            {"repository root resolution failed", "missing event directory"},
+        )
+        self.assertNotIn(loop.name, str(captured.exception))
+        self.assertIsNone(captured.exception.__cause__)
+        self.assertIsNone(captured.exception.__context__)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(2, main(["export", "--root", str(loop)]))
+        self.assertNotIn(loop.name, err.getvalue())
+
+    def test_cli_export_options_do_not_cross_authorize_other_fields(self):
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            self.assertEqual(0, main(["export", "--root", str(self.root), "--include-path"]))
+        entry = json.loads(stdout.getvalue())["events"][0]
+        self.assertIn("path", entry)
+        self.assertNotIn("subject", entry)
+        self.assertNotIn("recorded_status", entry)
+
+    def test_local_check_keeps_detailed_diagnostics_separate_from_export(self):
+        private_value = "SENSITIVE-CHECK-ONLY-FIELD"
+        self.event.write_text(
+            self.event.read_text(encoding="utf-8").replace("Event: ADD", f"Event: {private_value}"),
+            encoding="utf-8",
+        )
+        checked = io.StringIO()
+        with redirect_stderr(checked):
+            self.assertEqual(2, main(["check", "--root", str(self.root)]))
+        self.assertIn(private_value, checked.getvalue())
+        projected = io.StringIO()
+        with redirect_stderr(projected):
+            self.assertEqual(2, main(["export", "--root", str(self.root), "--include-path"]))
+        self.assertNotIn(private_value, projected.getvalue())
+        self.assertIn("unsupported event type", projected.getvalue())
 
     def test_recorded_status_requires_explicit_opt_in(self):
         result = build_manifest(self.root, include_status=True)

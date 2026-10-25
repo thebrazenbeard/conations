@@ -129,15 +129,16 @@ def _header_fields(text: str, path: str) -> dict[str, str]:
     return fields
 
 
-def build_manifest(
-    root: Path, *, include_subject: bool = False, include_status: bool = False
+def _build_manifest_unchecked(
+    root: Path, *, include_path: bool, include_subject: bool, include_status: bool
 ) -> dict[str, object]:
-    """Validate index coverage and return explicitly historical evidence metadata.
-
-    Free-text subjects are omitted unless the caller asks for them. This does
-    not establish that a subject is safe to export to any remote provider.
-    """
-    root = Path(root).resolve()
+    """Validate source events with detailed local diagnostics (private data)."""
+    try:
+        root = Path(root).resolve()
+    except RuntimeError as exc:
+        # A self-referential root symlink raises RuntimeError, not OSError.
+        # Keep the original path available only to explicit local diagnostics.
+        raise ManifestError(f"repository root resolution failed: {root}") from exc
     event_root = root / "events"
     if event_root.is_symlink():
         raise ManifestError(f"symlink is not allowed: {event_root}")
@@ -164,12 +165,13 @@ def build_manifest(
         if not fields["Observed/recorded"].startswith(match["day"]):
             raise ManifestError(f"event date disagrees with observed/recorded: {path}")
         entry = {
-            "path": path,
             "event_date": match["day"],
             "event_type": fields["Event"],
             "content_sha256": hashlib.sha256(raw).hexdigest(),
             "status_currentness": "historical_only",
         }
+        if include_path:
+            entry["path"] = path
         if include_subject:
             entry["subject"] = fields["Subject"]
         if include_status:
@@ -191,10 +193,68 @@ def build_manifest(
     }
 
 
+# Error categories deliberately contain no file names, header values, or user
+# prose. A path disclosure choice never grants permission for other diagnostics.
+_ERROR_CATEGORIES = (
+    ("repository root resolution failed", "repository root resolution failed"),
+    ("raw HTML markup", "raw HTML markup"),
+    ("symlink is not allowed", "symlink is not allowed"),
+    ("missing regular file", "missing regular file"),
+    ("invalid UTF-8", "invalid UTF-8"),
+    ("duplicate ", "duplicate event header"),
+    ("missing required event fields", "missing required event fields"),
+    ("missing provenance section", "missing provenance section"),
+    ("unsupported event type", "unsupported event type"),
+    ("missing event directory", "missing event directory"),
+    ("unexpected event file path", "unexpected event file path"),
+    ("invalid event date", "invalid event date"),
+    ("event date disagrees", "event date disagrees with recorded date"),
+    ("event not indexed", "event not indexed"),
+    ("index links without event files", "index links without event files"),
+)
+
+
+def _safe_diagnostic(exc: BaseException) -> str:
+    if isinstance(exc, ManifestError):
+        for prefix, category in _ERROR_CATEGORIES:
+            if str(exc).startswith(prefix):
+                return category
+        return "invalid conation manifest"
+    return "I/O error validating conation manifest"
+
+
+def build_manifest(
+    root: Path, *, include_path: bool = False, include_subject: bool = False,
+    include_status: bool = False, include_diagnostics: bool = False,
+) -> dict[str, object]:
+    """Return historical evidence metadata with independent disclosure gates.
+
+    The default also redacts validation errors; choosing to disclose a path
+    does not disclose event prose through exceptions. Explicit local diagnostic
+    mode is separate and must never be treated as safe to replicate remotely.
+    """
+    try:
+        return _build_manifest_unchecked(
+            root, include_path=include_path, include_subject=include_subject,
+            include_status=include_status,
+        )
+    except (ManifestError, OSError, UnicodeError) as exc:
+        if include_diagnostics:
+            raise
+        category = _safe_diagnostic(exc)
+    # Raise outside the except scope: Python otherwise attaches the original
+    # sensitive exception as __context__ even with `raise ... from None`.
+    raise ManifestError(category)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("check", "export"))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument(
+        "--include-path", action="store_true",
+        help="Explicitly include descriptive event paths in an export.",
+    )
     parser.add_argument(
         "--include-subject", action="store_true",
         help="Explicitly include source subject text in an export (local stdout only).",
@@ -203,13 +263,18 @@ def main(argv: list[str] | None = None) -> int:
         "--include-status", action="store_true",
         help="Explicitly include recorded status text in an export (local stdout only).",
     )
+    parser.add_argument(
+        "--include-diagnostics", action="store_true",
+        help="Local-only detailed validation errors, potentially exposing private content.",
+    )
     args = parser.parse_args(argv)
-    if (args.include_subject or args.include_status) and args.action != "export":
-        parser.error("--include-subject and --include-status require export")
+    if (args.include_path or args.include_subject or args.include_status) and args.action != "export":
+        parser.error("--include-path, --include-subject and --include-status require export")
     try:
         manifest = build_manifest(
-            args.root, include_subject=args.include_subject,
-            include_status=args.include_status,
+            args.root, include_path=args.include_path,
+            include_subject=args.include_subject, include_status=args.include_status,
+            include_diagnostics=args.include_diagnostics or args.action == "check",
         )
     except ManifestError as exc:
         print(f"Conation history index INVALID: {exc}", file=sys.stderr)
