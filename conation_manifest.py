@@ -17,12 +17,81 @@ from pathlib import Path
 
 EVENT_KINDS = frozenset({"ADD", "REVISE", "CONTRADICT", "REVOKE", "COMPLETE", "REVIEW"})
 EVENT_PATH = re.compile(r"^events/(?P<day>\d{4}-\d{2}-\d{2})/[a-z0-9][a-z0-9-]*\.md$")
-INDEX_LINK = re.compile(r"\((?:\./)?(events/\d{4}-\d{2}-\d{2}/[^)]+\.md)\)")
+INDEX_LINK = re.compile(
+    r"^[ ]{0,3}\[[^\[\]\\]+\]\((?:\./)?"
+    r"(?P<path>events/\d{4}-\d{2}-\d{2}/[a-z0-9][a-z0-9-]*\.md)\)[ \t]*$"
+)
+FENCE_OPEN = re.compile(r"^[ ]{0,3}(?P<marks>`{3,}|~{3,})(?P<info>.*)$")
+FENCE_CLOSE = re.compile(r"^[ ]{0,3}(?P<marks>`+|~+)[ \t]*$")
+BLOCKQUOTE = re.compile(r"^[ ]{0,3}(?:[-+*][ \t]+)?>")
+HTML_MARKUP = re.compile(r"<!--|<(?:/?[A-Za-z]|![A-Za-z\[]|\?)")
 FIELDS = {"Observed/recorded", "Event", "Subject", "Current status"}
 
 
 class ManifestError(ValueError):
     """The repository history cannot be faithfully indexed from this checkout."""
+
+
+def _index_links(text: str) -> set[str]:
+    """Recognize standalone Markdown index links, never code or link-like prose.
+
+    This index is deliberately plain Markdown only. Raw HTML is rejected,
+    not approximated by a partial and potentially bypassable HTML parser.
+    """
+    links: set[str] = set()
+    fence_mark: str | None = None
+    fence_size = 0
+    inline_ticks = 0
+
+    def escaped(line: str, index: int) -> bool:
+        prior = index - 1
+        while prior >= 0 and line[prior] == "\\":
+            prior -= 1
+        return (index - 1 - prior) % 2 == 1
+
+    def update_inline_code_state(line: str, current: int) -> int:
+        cursor = 0
+        while cursor < len(line):
+            if line[cursor] != "`" or escaped(line, cursor):
+                cursor += 1
+                continue
+            end = cursor
+            while end < len(line) and line[end] == "`":
+                end += 1
+            count = end - cursor
+            if current == 0:
+                current = count
+            elif current == count:
+                current = 0
+            cursor = end
+        return current
+
+    for line in text.splitlines():
+        if fence_mark is not None:
+            close = FENCE_CLOSE.fullmatch(line)
+            if (close and close["marks"][0] == fence_mark
+                    and len(close["marks"]) >= fence_size):
+                fence_mark = None
+                fence_size = 0
+            continue
+        if inline_ticks == 0:
+            opener = FENCE_OPEN.fullmatch(line)
+            if opener and (opener["marks"][0] != "`" or "`" not in opener["info"]):
+                fence_mark = opener["marks"][0]
+                fence_size = len(opener["marks"])
+                continue
+        if HTML_MARKUP.search(line):
+            raise ManifestError("raw HTML markup is unsupported in EVENT_INDEX.md")
+        if BLOCKQUOTE.match(line) or line.startswith(("    ", "\t")):
+            continue
+        was_code = inline_ticks != 0
+        inline_ticks = update_inline_code_state(line, inline_ticks)
+        if was_code or inline_ticks:
+            continue
+        match = INDEX_LINK.fullmatch(line)
+        if match:
+            links.add(match["path"])
+    return links
 
 
 def _read_regular(path: Path) -> tuple[str, bytes]:
@@ -60,7 +129,9 @@ def _header_fields(text: str, path: str) -> dict[str, str]:
     return fields
 
 
-def build_manifest(root: Path, *, include_subject: bool = False) -> dict[str, object]:
+def build_manifest(
+    root: Path, *, include_subject: bool = False, include_status: bool = False
+) -> dict[str, object]:
     """Validate index coverage and return explicitly historical evidence metadata.
 
     Free-text subjects are omitted unless the caller asks for them. This does
@@ -76,7 +147,7 @@ def build_manifest(root: Path, *, include_subject: bool = False) -> dict[str, ob
         if candidate.is_symlink():
             raise ManifestError(f"symlink is not allowed: {candidate}")
     index, _ = _read_regular(root / "EVENT_INDEX.md")
-    links = set(INDEX_LINK.findall(index))
+    links = _index_links(index)
     events: list[dict[str, str]] = []
     found: set[str] = set()
     for file in sorted(event_root.rglob("*.md")):
@@ -96,12 +167,13 @@ def build_manifest(root: Path, *, include_subject: bool = False) -> dict[str, ob
             "path": path,
             "event_date": match["day"],
             "event_type": fields["Event"],
-            "recorded_status": fields["Current status"],
             "content_sha256": hashlib.sha256(raw).hexdigest(),
             "status_currentness": "historical_only",
         }
         if include_subject:
             entry["subject"] = fields["Subject"]
+        if include_status:
+            entry["recorded_status"] = fields["Current status"]
         events.append(entry)
         found.add(path)
     missing = found - links
@@ -127,11 +199,18 @@ def main(argv: list[str] | None = None) -> int:
         "--include-subject", action="store_true",
         help="Explicitly include source subject text in an export (local stdout only).",
     )
+    parser.add_argument(
+        "--include-status", action="store_true",
+        help="Explicitly include recorded status text in an export (local stdout only).",
+    )
     args = parser.parse_args(argv)
-    if args.include_subject and args.action != "export":
-        parser.error("--include-subject requires export")
+    if (args.include_subject or args.include_status) and args.action != "export":
+        parser.error("--include-subject and --include-status require export")
     try:
-        manifest = build_manifest(args.root, include_subject=args.include_subject)
+        manifest = build_manifest(
+            args.root, include_subject=args.include_subject,
+            include_status=args.include_status,
+        )
     except ManifestError as exc:
         print(f"Conation history index INVALID: {exc}", file=sys.stderr)
         return 2

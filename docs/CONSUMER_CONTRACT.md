@@ -6,6 +6,14 @@ model, database, or another repo by this tool. It validates index membership,
 event header fields, provenance section presence, path dates, UTF-8, and
 unexpected symlinks; it cannot prove the truth or authorship of source prose.
 
+Index membership requires a *standalone Markdown link line* to the event file.
+Path-like prose, images, blockquotes, fenced/indented code, and inline code do
+not count. Raw HTML markup outside fenced code (including comments and custom
+block tags) is **unsupported and fails the whole index**, rather than being
+partially parsed as membership. Backslash-escaped link-like text is literal
+text, not an index entry. Reference-style and complex nested links are not
+supported; use a simple `[label](./events/YYYY-MM-DD/name.md)` entry instead.
+
 ## JSON surface
 
 The top-level keys are:
@@ -19,12 +27,13 @@ The top-level keys are:
 | `events[]` | Dated source metadata; **not** active drive signals |
 
 Each `events[]` entry has `path`, `event_date`, `event_type`,
-`recorded_status`, `content_sha256`, and `status_currentness: historical_only`.
+`content_sha256`, and `status_currentness: historical_only`.
 The digest covers the exact stored file **bytes**, including line endings. A
 recorded label such as `PRESENT` describes the dated event; it is not current
-state. `subject` is omitted unless the caller invokes `export
---include-subject`, which is an explicit disclosure choice, not a license for
-remote replication or model training.
+state. Free-text `subject` and `recorded_status` are omitted unless the caller
+invokes `export --include-subject --include-status` (each flag works
+independently). These are explicit disclosure choices, not licenses for remote
+replication or model training.
 
 ## Boundary for Meso-CRCT, Volition, and other consumers
 
