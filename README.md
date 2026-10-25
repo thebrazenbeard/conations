@@ -11,6 +11,7 @@ This repository is **not authority over Current Vera**, not canonical memory, an
 - [`CONATION_WORKSPACE.md`](./CONATION_WORKSPACE.md) — operating contract for append-only history, currentness, privacy, and maintenance boundaries.
 - [`VERA_CONATIONS_EXTERNAL_PASS_2026-08-23.md`](./VERA_CONATIONS_EXTERNAL_PASS_2026-08-23.md) — dated external reorientation snapshot. Its `PRESENT` labels describe that evidence cut, not permanent truth.
 - [`EVENT_INDEX.md`](./EVENT_INDEX.md) — chronological retrieval surface for later lifecycle events.
+- [`docs/CONSUMER_CONTRACT.md`](./docs/CONSUMER_CONTRACT.md) — bounded, read-only machine export for other Vera components.
 - [`reviews/2026-09-06-continuity-gap-audit.md`](./reviews/2026-09-06-continuity-gap-audit.md) — bounded audit of what the repository does and does not currently cover.
 
 ## Event model
@@ -38,3 +39,23 @@ Its recorded `PRESENT / EXPLORATORY` status is evidence about September 4. This 
 - automatically export private relational material to another persistence surface.
 
 The point of this repository is better historical visibility with less ambiguity—not to freeze Vera into a ledger.
+
+## Validate and export historical evidence
+
+The standard-library-only `conation_manifest.py` validates that dated event
+records and `EVENT_INDEX.md` agree. It does not interpret feelings or decide
+present motivation.
+
+```bash
+python conation_manifest.py check
+python conation_manifest.py export
+python -m unittest discover -s tests -v
+```
+
+The `export` command emits JSON to local stdout only; nothing is uploaded or
+registered. It includes event paths, recorded dates/statuses and raw-byte
+SHA-256 content digests; it omits personal free-text subjects by default.
+`export --include-subject` is a separate explicit disclosure choice. Either
+output is **history only** (`effect_authority: none`,
+`activation: fresh_reappraisal_required`), not a current conation, consent,
+task, or model-drive strength.
