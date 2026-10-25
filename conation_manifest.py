@@ -17,12 +17,90 @@ from pathlib import Path
 
 EVENT_KINDS = frozenset({"ADD", "REVISE", "CONTRADICT", "REVOKE", "COMPLETE", "REVIEW"})
 EVENT_PATH = re.compile(r"^events/(?P<day>\d{4}-\d{2}-\d{2})/[a-z0-9][a-z0-9-]*\.md$")
-INDEX_LINK = re.compile(r"\((?:\./)?(events/\d{4}-\d{2}-\d{2}/[^)]+\.md)\)")
+INDEX_LINK = re.compile(
+    r"(?<!!)\[[^\[\]\n]+\]\((?:\./)?"
+    r"(?P<path>events/\d{4}-\d{2}-\d{2}/[a-z0-9][a-z0-9-]*\.md)\)"
+)
+FENCE_OPEN = re.compile(r"^[ ]{0,3}(?P<marks>`{3,}|~{3,})(?P<info>.*)$")
+FENCE_CLOSE = re.compile(r"^[ ]{0,3}(?P<marks>`+|~+)[ \t]*$")
+BLOCKQUOTE = re.compile(r"^[ ]{0,3}(?:[-+*][ \t]+)?>")
 FIELDS = {"Observed/recorded", "Event", "Subject", "Current status"}
 
 
 class ManifestError(ValueError):
     """The repository history cannot be faithfully indexed from this checkout."""
+
+
+def _index_links(text: str) -> set[str]:
+    """Recognize bounded Markdown links, never prose path mentions or code.
+
+    This is intentionally narrower than CommonMark: the event index uses plain
+    inline links and should not depend on a complex, ambiguous parser.
+    """
+    links: set[str] = set()
+    fence_mark: str | None = None
+    fence_size = 0
+    in_comment = False
+    inline_ticks = 0
+
+    for line in text.splitlines():
+        if fence_mark is not None:
+            close = FENCE_CLOSE.fullmatch(line)
+            if (close and close["marks"][0] == fence_mark
+                    and len(close["marks"]) >= fence_size):
+                fence_mark = None
+                fence_size = 0
+            continue
+        if not in_comment and not inline_ticks:
+            opener = FENCE_OPEN.fullmatch(line)
+            if opener and (opener["marks"][0] != "`" or "`" not in opener["info"]):
+                fence_mark = opener["marks"][0]
+                fence_size = len(opener["marks"])
+                continue
+        skip_line = bool(BLOCKQUOTE.match(line)) or line.startswith(("    ", "\t"))
+        if skip_line and not (in_comment or inline_ticks):
+            continue
+
+        # Preserve character offsets while masking HTML comments and code spans.
+        visible = list(line)
+        pos = 0
+        while pos < len(line):
+            if in_comment:
+                end = line.find("-->", pos)
+                stop = len(line) if end < 0 else end + 3
+                visible[pos:stop] = " " * (stop - pos)
+                pos = stop
+                if end >= 0:
+                    in_comment = False
+                continue
+            if inline_ticks:
+                if line[pos] == "`":
+                    stop = pos
+                    while stop < len(line) and line[stop] == "`":
+                        stop += 1
+                    if stop - pos == inline_ticks:
+                        inline_ticks = 0
+                else:
+                    stop = pos + 1
+                visible[pos:stop] = " " * (stop - pos)
+                pos = stop
+                continue
+            if line.startswith("<!--", pos):
+                in_comment = True
+                continue
+            if line[pos] == "`":
+                stop = pos
+                while stop < len(line) and line[stop] == "`":
+                    stop += 1
+                inline_ticks = stop - pos
+                visible[pos:stop] = " " * (stop - pos)
+                pos = stop
+                continue
+            pos += 1
+        if not skip_line:
+            for match in INDEX_LINK.finditer("".join(visible)):
+                links.add(match["path"])
+    return links
 
 
 def _read_regular(path: Path) -> tuple[str, bytes]:
@@ -76,7 +154,7 @@ def build_manifest(root: Path, *, include_subject: bool = False) -> dict[str, ob
         if candidate.is_symlink():
             raise ManifestError(f"symlink is not allowed: {candidate}")
     index, _ = _read_regular(root / "EVENT_INDEX.md")
-    links = set(INDEX_LINK.findall(index))
+    links = _index_links(index)
     events: list[dict[str, str]] = []
     found: set[str] = set()
     for file in sorted(event_root.rglob("*.md")):

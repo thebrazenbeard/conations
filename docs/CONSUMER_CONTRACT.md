@@ -6,6 +6,11 @@ model, database, or another repo by this tool. It validates index membership,
 event header fields, provenance section presence, path dates, UTF-8, and
 unexpected symlinks; it cannot prove the truth or authorship of source prose.
 
+Index membership requires a *real inline Markdown link* to the event file.
+Path-like prose, images, blockquotes, fenced/indented code, inline code and
+HTML comments do not count. Reference-style and complex nested links are not
+supported; use a simple `[label](./events/YYYY-MM-DD/name.md)` entry instead.
+
 ## JSON surface
 
 The top-level keys are:

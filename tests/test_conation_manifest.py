@@ -77,6 +77,50 @@ class ConationManifestTests(unittest.TestCase):
         with self.assertRaises(ManifestError):
             build_manifest(self.root)
 
+    def test_fenced_only_path_is_not_an_index_link(self):
+        self.index.write_text(
+            "# Index\n```text\n(events/2026-09-04/test-direction.md)\n```\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ManifestError, "not indexed"):
+            build_manifest(self.root)
+
+    def test_fenced_markdown_link_is_not_index_membership(self):
+        self.index.write_text(
+            "~~~markdown\n[example](./events/2026-09-04/test-direction.md)\n~~~\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ManifestError, "not indexed"):
+            build_manifest(self.root)
+
+    def test_inline_code_and_html_comment_links_do_not_count(self):
+        self.index.write_text(
+            "`[example](./events/2026-09-04/test-direction.md)`\n"
+            "<!-- [fake](./events/2026-09-04/test-direction.md) -->\n"
+            "<!--\n[hidden](./events/2026-09-04/test-direction.md)\n-->\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ManifestError, "not indexed"):
+            build_manifest(self.root)
+
+    def test_real_markdown_link_is_counted_while_code_examples_are_ignored(self):
+        self.index.write_text(
+            "```markdown\n[fake](./events/2026-09-04/missing.md)\n```\n"
+            "[actual](./events/2026-09-04/test-direction.md)\n",
+            encoding="utf-8",
+        )
+        result = build_manifest(self.root)
+        self.assertEqual(1, len(result["events"]))
+
+    def test_image_or_blockquote_does_not_count_as_index(self):
+        self.index.write_text(
+            "![image](./events/2026-09-04/test-direction.md)\n"
+            "> [quoted](./events/2026-09-04/test-direction.md)\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ManifestError, "not indexed"):
+            build_manifest(self.root)
+
     def test_header_duplication_rejected(self):
         original = self.event.read_text(encoding="utf-8")
         self.event.write_text(original.replace("Event: ADD", "Event: ADD\nEvent: REVOKE"), encoding="utf-8")
