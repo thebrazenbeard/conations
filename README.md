@@ -53,9 +53,10 @@ python -m unittest discover -s tests -v
 ```
 
 The `export` command emits JSON to local stdout only; nothing is uploaded or
-registered. It includes event paths, recorded dates/statuses and raw-byte
-SHA-256 content digests; it omits personal free-text subjects by default.
-`export --include-subject` is a separate explicit disclosure choice. Either
+registered. It includes event paths, recorded dates and raw-byte SHA-256
+content digests; it omits personal free-text subjects and recorded status
+text by default. `export --include-subject --include-status` selects those
+fields for explicit local disclosure. Either
 output is **history only** (`effect_authority: none`,
 `activation: fresh_reappraisal_required`), not a current conation, consent,
 task, or model-drive strength.
