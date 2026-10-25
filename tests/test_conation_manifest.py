@@ -115,8 +115,15 @@ class ConationManifestTests(unittest.TestCase):
     def test_root_symlink_loop_does_not_leak_private_path(self):
         loop = self.root / "private-relationship-direction-loop"
         loop.symlink_to(loop)
-        with self.assertRaisesRegex(ManifestError, "root resolution failed") as captured:
+        with self.assertRaises(ManifestError) as captured:
             build_manifest(loop)
+        # Python 3.12 raises RuntimeError from resolve() for this loop, while
+        # 3.13 can resolve non-strictly and later reject the missing directory.
+        # Both must disclose exactly one fixed, private-data-free category.
+        self.assertIn(
+            str(captured.exception),
+            {"repository root resolution failed", "missing event directory"},
+        )
         self.assertNotIn(loop.name, str(captured.exception))
         self.assertIsNone(captured.exception.__cause__)
         self.assertIsNone(captured.exception.__context__)
