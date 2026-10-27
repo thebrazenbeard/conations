@@ -350,6 +350,27 @@ class ConationManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "duplicate"):
             build_manifest(self.root)
 
+    def test_observed_date_requires_boundary_after_indexed_day(self):
+        original = self.event.read_text(encoding="utf-8")
+        self.event.write_text(
+            original.replace(
+                "Observed/recorded: 2026-09-04",
+                "Observed/recorded: 2026-09-04junk",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ManifestError, "date disagrees"):
+            build_manifest(self.root)
+
+        self.event.write_text(
+            original.replace(
+                "Observed/recorded: 2026-09-04",
+                "Observed/recorded: 2026-09-04T12:30:00-04:00",
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(1, len(build_manifest(self.root)["events"]))
+
     def test_unrecognized_lifecycle_kind_rejected(self):
         original = self.event.read_text(encoding="utf-8")
         self.event.write_text(original.replace("Event: ADD", "Event: EXECUTE"), encoding="utf-8")

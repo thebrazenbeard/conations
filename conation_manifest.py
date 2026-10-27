@@ -162,7 +162,13 @@ def _build_manifest_unchecked(
             raise ManifestError(f"invalid event date: {path}") from exc
         content, raw = _read_regular(file)
         fields = _header_fields(content, path)
-        if not fields["Observed/recorded"].startswith(match["day"]):
+        # A date prefix must have a boundary: `YYYY-MM-DDjunk` is not the
+        # indexed day. A bare day or delimited time/detail is allowed, but
+        # the remainder is not independently parsed or authenticated.
+        recorded = fields["Observed/recorded"]
+        if not (recorded == match["day"] or recorded.startswith(
+            (match["day"] + "T", match["day"] + " ")
+        )):
             raise ManifestError(f"event date disagrees with observed/recorded: {path}")
         entry = {
             "event_date": match["day"],
