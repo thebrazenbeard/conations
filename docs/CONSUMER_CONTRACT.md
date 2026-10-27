@@ -47,6 +47,33 @@ mapping from `recorded_status: PRESENT` to an active Volition `Signal` or
 Meso-CRCT state is valid. Such state requires independently obtained *fresh*
 evidence and a separate authorized decision path. This exporter supplies none.
 
+### Bounded Python consumer adapter
+
+`conation_history_context.py` provides `parse_history_export(json_text)` and
+`historical_context(manifest)` for consumers that need dated source metadata.
+The adapter checks the full history-only envelope, lifecycle kinds, digests,
+dates, event currentness, and all allowed keys; forged drive, consent, and
+activation fields fail closed. It accepts but **does not return** explicitly
+opted-in subject, path, or recorded-status text. The result is a tuple of
+immutable `HistoricalConationEvidence` entries whose `evidence_class` is fixed
+to `HISTORICAL_ONLY`. It cannot be passed off as an active drive signal.
+
+Example, with a local authorized export:
+
+```python
+from conation_history_context import parse_history_export
+
+evidence = parse_history_export(history_json)
+# Evidence locators for appraisal; never live wants or tasks.
+```
+
+The consumer must independently obtain a newly observed, authenticated, and
+authorized current signal before Volition may create or resume an active want.
+An old `recorded_status: PRESENT`, even when privately exported, is never that
+fresh observation. `REVOKE` and `COMPLETE` remain historical lifecycle events,
+not commands to reanimate or activate anything. This adapter is a local library,
+not a deployed bridge, synchronization agent, or runtime integration.
+
 Validation does not establish historical completeness, cryptographic author
 authentication, semantics, active runtime installation, or independent
 currentness. `EVENT_INDEX.md` is an explicit set of known indexed events, not a

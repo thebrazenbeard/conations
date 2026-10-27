@@ -68,3 +68,10 @@ output or private opt-in exports to other providers automatically. Either
 successful export is **history only** (`effect_authority: none`,
 `activation: fresh_reappraisal_required`), not a current conation, consent,
 task, or model-drive strength.
+
+Consumers can validate and minimize the historical projection further with
+`conation_history_context.py` (`parse_history_export` / `historical_context`).
+It discards optionally disclosed private fields and returns only immutable
+history evidence metadata. It does **not** create active wants: Volition must
+independently confirm a new current observation before activation. See
+[`docs/CONSUMER_CONTRACT.md`](docs/CONSUMER_CONTRACT.md).
