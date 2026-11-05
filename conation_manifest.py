@@ -239,6 +239,12 @@ def build_manifest(
     does not disclose event prose through exceptions. Explicit local diagnostic
     mode is separate and must never be treated as safe to replicate remotely.
     """
+    # Python annotations do not enforce boolean parameters at runtime. Truthy
+    # strings such as "false" must not opt into private field disclosure.
+    if any(type(flag) is not bool for flag in (
+        include_path, include_subject, include_status, include_diagnostics,
+    )):
+        raise ManifestError("invalid disclosure option")
     try:
         return _build_manifest_unchecked(
             root, include_path=include_path, include_subject=include_subject,

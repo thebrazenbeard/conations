@@ -55,6 +55,15 @@ class ConationManifestTests(unittest.TestCase):
         self.assertNotIn("Private exploratory direction", json.dumps(result))
         self.assertNotIn("PRESENT / EXPLORATORY", json.dumps(result))
 
+    def test_disclosure_options_require_exact_boolean_values(self):
+        for name in ("include_path", "include_subject", "include_status", "include_diagnostics"):
+            for invalid in ("false", "true", 0, 1, None, [], {}):
+                with self.subTest(option=name, value=repr(invalid)):
+                    with self.assertRaisesRegex(ManifestError, "invalid disclosure option") as captured:
+                        build_manifest(self.root, **{name: invalid})
+                    self.assertIsNone(captured.exception.__cause__)
+                    self.assertIsNone(captured.exception.__context__)
+
     def test_sensitive_subject_requires_explicit_opt_in(self):
         result = build_manifest(self.root, include_subject=True)
         self.assertEqual("Private exploratory direction", result["events"][0]["subject"])
