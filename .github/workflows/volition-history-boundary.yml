@@ -1,0 +1,32 @@
+name: Pinned Conations-Volition history boundary
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  negative-transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Conations proposed source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout exact reviewed Volition source
+        uses: actions/checkout@v4
+        with:
+          repository: thebrazenbeard/volition
+          ref: f622e564bf257b0ffc0b3c05130b62db1c201d3d
+          path: .integration-pinned-volition
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run actual exporter/serializer/parser and pinned Volition bridge tests
+        env:
+          VOLITION_SOURCE_ROOT: ${{ github.workspace }}/.integration-pinned-volition
+        run: python -B -m unittest discover -s integration_tests -v
