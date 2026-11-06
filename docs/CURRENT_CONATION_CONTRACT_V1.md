@@ -45,6 +45,10 @@ provided by the observation source and is not a measured feeling.
 - Optimistic `expected_generation` must match. Repeating the exact same
   currently active observation ID is idempotent; changed or withdrawn replay
   fails. A same-conation reappraisal must advance its observed time.
+- Per-instance lifecycle calls are serialized by a reentrant lock: the
+  generation check and subsequent mutation are one atomic operation against
+  other threads in the same Python process. `close` cannot interleave with an
+  in-flight observation. This is not inter-process concurrency control.
 - At most 32 current candidates and 256 observations per instance; an
   exhausted observation budget requires explicit replacement, not silent
   retention. Expired active candidates release the 32-slot capacity on the
@@ -85,12 +89,12 @@ now = datetime.now(timezone.utc)
 live = CurrentConationEngine(
     subject_id="vera", runtime_instance_id="fresh-instance-001",
     model_revision="verified-model-revision",
-    origin=ConationOrigin.MODEL_PROPOSAL,
 )
 candidate = CurrentConationObservation(
     conation_id="explore", observation_id="observation-001",
     subject_id="vera", runtime_instance_id="fresh-instance-001",
     model_revision="verified-model-revision",
+    origin=ConationOrigin.MODEL_PROPOSAL,
     statement="Explore this question", source_ref="fresh-observation-001",
     priority=0.6, observed_at=now, expires_at=now + timedelta(seconds=60),
 )
