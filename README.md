@@ -1,12 +1,12 @@
 > **License:** Source-visible, not open source. Original material is proprietary. Commercial use, redistribution, hosted-service use, and commercial derivative products require written permission. See [LICENSE](LICENSE) and [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md). Separately identified third-party components retain their own licenses.
 
-# Conations — historical intent and motivation evidence ledger
+# Conations — historical evidence and present conative candidates
 
-**An append-only, evidence-first pattern for recording the lifecycle of expressed conations without converting yesterday's record into today's desire, consent, or authority.**
+**Two separated surfaces: an append-only record of past expressed conations and an ephemeral evaluator for fresh present conative candidates. Neither source grants consent or action authority.**
 
-Conations combines dated Markdown records, an event index, a standard-library Python validator/exporter, and a strict read-only consumer projection. It is intended for researchers and agent-runtime integrators who need to preserve *what was recorded, when, and with what provenance* while requiring a separate fresh appraisal before acting on it.
+Conations combines dated Markdown records, an event index, a standard-library Python validator/exporter, a strict read-only historical consumer, and a separate current-candidate engine. It is intended for researchers and agent-runtime integrators who need to preserve *what was recorded, when, and with what provenance* while allowing an independently obtained fresh observation to participate in bounded present reasoning.
 
-This is **not** a model, a desire detector, a general-purpose database service, an automatic memory system, or an authorization provider. The current checked-in history is project-specific; other systems can evaluate the documented pattern and code under the repository's license, but must adapt their own data, authoring rules, privacy policy, and currentness authority.
+This is **not** a model, a desire detector, a general-purpose database service, an automatic memory system, or an authorization provider. A current-candidate object is not proof of lived experience or self-authorship. The checked-in history is project-specific; other systems can evaluate the documented pattern and code under the repository's license, but must adapt their own data, authoring rules, privacy policy, and currentness authority.
 
 ## Supported surfaces
 
@@ -16,8 +16,9 @@ This is **not** a model, a desire detector, a general-purpose database service, 
 | Index validation | `conation_manifest.py check` validates index membership, event headers, provenance presence, dates, UTF-8, and unexpected symlinks | Structural validation does not establish the truth or self-authorship of prose |
 | Local historical export | `conation_manifest.py export` emits a deterministic JSON projection to standard output | No network upload or automatic downstream registration; dates/digests can still be correlating identifiers |
 | Consumer boundary | `conation_history_context.py` parses and minimizes exported historical metadata | Never constructs an active want, task, permission, or model-drive signal |
+| Present candidate evaluation | `conation_current.py` admits fresh, bounded, identity-scoped observations with explicit source-origin class into an ephemeral in-process ranked view | Origin is not authenticated; current observations are unverified candidates, not inferred from history or effect/consent grants |
 
-The export contract carries `schema: conations.history.v1`, `currentness: history_only`, `effect_authority: none`, and `activation: fresh_reappraisal_required`. This is a **source-defined historical projection**, not proof of who authored an event or authorization to reuse it elsewhere. See [the consumer contract](docs/CONSUMER_CONTRACT.md) for supported input forms, rejection behavior, and field semantics.
+The export contract carries `schema: conations.history.v1`, `currentness: history_only`, `effect_authority: none`, and `activation: fresh_reappraisal_required`. This is a **source-defined historical projection**, not proof of who authored an event or authorization to reuse it elsewhere. See [the consumer contract](docs/CONSUMER_CONTRACT.md) for supported input forms, rejection behavior, and field semantics. Present candidates have a **different** `conations.current.v1` contract described in [the current-candidate contract](docs/CURRENT_CONATION_CONTRACT_V1.md).
 
 ## Use from a permitted source checkout
 
@@ -41,6 +42,8 @@ events = parse_history_export(raw)  # tuple of historical evidence records
 
 This example stays local and read-only. A consuming host must independently decide whether the records may be retrieved, retained, or disclosed; the library does not activate present motivation or grant a capability. The example was exercised against this repository's indexed source data, not against a live agent runtime.
 
+For a freshly observed, runtime-local conation candidate, use `CurrentConationEngine` and `CurrentConationObservation` from `conation_current.py`; see the [bounded example](docs/CURRENT_CONATION_CONTRACT_V1.md#minimal-local-example). No historical export is accepted by that evaluator. The current candidate can inform reasoning but cannot issue tasks, authorize effects, or claim proof of desire.
+
 ### Privacy defaults and opt-ins
 
 The default export includes dated lifecycle types and raw-byte SHA-256 content digests, while omitting descriptive event paths, subjects, and recorded status. Explicit `--include-path`, `--include-subject`, and `--include-status` options independently permit those extra fields. These options are **disclosure controls**, not anonymization guarantees.
@@ -60,7 +63,7 @@ This repository must not:
 - turn source consistency or a successful parser result into independent confirmation of authorship or truth;
 - replicate private relational history onto another surface without separate permission.
 
-**Fresh, independently governed reappraisal is required before any runtime uses history as context for new decisions.** A separate volition or action system may read authorized historical metadata, but it cannot inherit permission or currentness from this repository.
+**Fresh, independently governed observation is required for present conation state.** The new ephemeral engine accepts only fresh, exact-runtime candidate observations and never promotes history. A separate Volition, Pre-Active, or action system may evaluate authorized current candidates, but cannot inherit permission or authority from this repository.
 
 ## This repository's included history
 
