@@ -9,8 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from functools import wraps
 import math
 import re
+from threading import RLock
 
 
 FRESHNESS_SECONDS = 30
@@ -30,6 +32,17 @@ class ConationOrigin(str, Enum):
     MODEL_PROPOSAL = "MODEL_PROPOSAL"
     RUNTIME_SELF_REPORT = "RUNTIME_SELF_REPORT"
     HOST_OBSERVATION = "HOST_OBSERVATION"
+
+
+def _serialized(method):
+    """Serialize a single engine's lifecycle, including nested snapshots."""
+
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return call
 
 
 def _opaque(value: object) -> bool:
@@ -102,7 +115,7 @@ class CurrentConationEngine:
 
     __slots__ = (
         "_subject_id", "_runtime_instance_id", "_model_revision",
-        "_active", "_seen", "_generation", "_closed", "_last_evaluation",
+        "_active", "_seen", "_generation", "_closed", "_last_evaluation", "_lock",
     )
 
     def __init__(self, *, subject_id: str, runtime_instance_id: str, model_revision: str):
@@ -116,6 +129,7 @@ class CurrentConationEngine:
         self._generation = 0
         self._closed = False
         self._last_evaluation: datetime | None = None
+        self._lock = RLock()
 
     @property
     def subject_id(self) -> str:
@@ -170,6 +184,7 @@ class CurrentConationEngine:
             raise ConationCurrentError("current observation not fresh and bounded")
         return observation
 
+    @_serialized
     def snapshot(self, *, now: datetime) -> CurrentConationSnapshot:
         self._require_open()
         instant = self._checked_time(now)
@@ -187,6 +202,7 @@ class CurrentConationEngine:
             "CANDIDATES_REPORTED" if active else "UNKNOWN",
         )
 
+    @_serialized
     def observe(
         self, observation: CurrentConationObservation, *,
         now: datetime, expected_generation: int,
@@ -225,6 +241,7 @@ class CurrentConationEngine:
         self._generation += 1
         return self.snapshot(now=instant)
 
+    @_serialized
     def withdraw(
         self, conation_id: str, *, now: datetime, expected_generation: int
     ) -> CurrentConationSnapshot:
@@ -241,6 +258,7 @@ class CurrentConationEngine:
         self._generation += 1
         return self.snapshot(now=instant)
 
+    @_serialized
     def close(self) -> None:
         self._active.clear()
         self._seen.clear()

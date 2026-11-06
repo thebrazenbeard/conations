@@ -1,8 +1,12 @@
 """Fresh present conation candidates are not historical records or permissions."""
 
 import unittest
+import re
 from dataclasses import FrozenInstanceError, fields
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from threading import Barrier, BrokenBarrierError, Event, Thread
+from unittest.mock import patch
 
 from conation_current import (
     ConationOrigin,
@@ -48,6 +52,105 @@ def engine():
 
 
 class CurrentConationTests(unittest.TestCase):
+    def test_concurrent_observations_cannot_both_pass_same_generation(self):
+        live = engine()
+        rendezvous = Barrier(2)
+        original_validate = CurrentConationEngine._validate_observation
+        results = []
+
+        def coordinated_validate(candidate, now):
+            validated = original_validate(candidate, now)
+            try:
+                rendezvous.wait(timeout=0.5)
+            except BrokenBarrierError:
+                # Expected with a serialized engine: the second thread cannot
+                # reach validation until the first one has committed.
+                pass
+            return validated
+
+        def submit(candidate):
+            try:
+                result = live.observe(candidate, now=NOW, expected_generation=0)
+                results.append(("accepted", result.generation))
+            except ConationCurrentError as error:
+                results.append(("rejected", str(error)))
+
+        with patch.object(CurrentConationEngine, "_validate_observation",
+                          staticmethod(coordinated_validate)):
+            workers = [
+                Thread(target=submit, args=(observed("first", "concurrent-first"),)),
+                Thread(target=submit, args=(observed("second", "concurrent-second"),)),
+            ]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join(timeout=3)
+            self.assertFalse(any(worker.is_alive() for worker in workers))
+
+        self.assertEqual(sum(kind == "accepted" for kind, _ in results), 1)
+        self.assertEqual(sum(kind == "rejected" for kind, _ in results), 1)
+        self.assertEqual(live.snapshot(now=NOW).generation, 1)
+        self.assertEqual(len(live.snapshot(now=NOW).candidates), 1)
+
+    def test_close_serializes_with_inflight_observation(self):
+        live = engine()
+        validating = Event()
+        release_validation = Event()
+        close_started = Event()
+        close_done = Event()
+        outcomes = []
+        original_validate = CurrentConationEngine._validate_observation
+
+        def paused_validate(candidate, now):
+            validated = original_validate(candidate, now)
+            validating.set()
+            if not release_validation.wait(timeout=3):
+                raise AssertionError("test synchronization timed out")
+            return validated
+
+        def submit():
+            try:
+                outcomes.append(("observe", live.observe(
+                    observed(), now=NOW, expected_generation=0,
+                ).generation))
+            except Exception as error:
+                outcomes.append(("observe_error", type(error).__name__))
+
+        def shutdown():
+            close_started.set()
+            live.close()
+            close_done.set()
+
+        with patch.object(CurrentConationEngine, "_validate_observation",
+                          staticmethod(paused_validate)):
+            observer = Thread(target=submit)
+            closer = Thread(target=shutdown)
+            observer.start()
+            try:
+                self.assertTrue(validating.wait(timeout=3))
+                closer.start()
+                self.assertTrue(close_started.wait(timeout=3))
+                self.assertFalse(close_done.wait(timeout=0.15))
+            finally:
+                release_validation.set()
+            observer.join(timeout=3)
+            closer.join(timeout=3)
+            self.assertFalse(observer.is_alive())
+            self.assertFalse(closer.is_alive())
+
+        self.assertEqual(outcomes, [("observe", 1)])
+        self.assertTrue(close_done.is_set())
+        with self.assertRaises(ConationCurrentError):
+            live.snapshot(now=NOW)
+
+    def test_documented_minimal_example_executes(self):
+        docs = (Path(__file__).resolve().parents[1] / "docs" /
+                "CURRENT_CONATION_CONTRACT_V1.md").read_text(encoding="utf-8")
+        snippet = re.search(r"## Minimal local example\s+```python\n(.*?)\n```",
+                            docs, flags=re.DOTALL)
+        self.assertIsNotNone(snippet, "the public contract must contain a Python example")
+        exec(compile(snippet.group(1), "CURRENT_CONATION_CONTRACT_V1.md", "exec"), {})
+
     def test_fresh_observation_is_live_non_authorizing_runtime_candidate(self):
         live = engine()
         state = live.observe(observed(), now=NOW, expected_generation=0)
